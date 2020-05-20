@@ -35,9 +35,13 @@ class GenericNeuronBuilder(OpBuilder):
 
         self.J_data = signals.combine([op.J for op in ops])
         self.output_data = signals.combine([op.output for op in ops])
+
+        states0 = ops[0].states
+        has_keys = isinstance(states0, dict)
+        keys = list(states0 if has_keys else range(len(states0)))
+        assert not has_keys or all(set(op.states) == set(keys) for op in ops)
         self.state_data = [
-            signals.combine([op.states[i] for op in ops])
-            for i in range(len(ops[0].states))
+            signals.combine([op.states[key] for op in ops]) for key in keys
         ]
 
         self.prev_result = []
@@ -53,7 +57,8 @@ class GenericNeuronBuilder(OpBuilder):
                 J_offset += op.J.shape[0]
 
                 op_states = []
-                for j, s in enumerate(op.states):
+                for j, key in enumerate(keys):
+                    s = op.states[key]
                     op_states += [
                         states[j][:, state_offset[j] : state_offset[j] + s.shape[0]]
                     ]
@@ -66,9 +71,14 @@ class GenericNeuronBuilder(OpBuilder):
                 for j in range(signals.minibatch_size):
                     # blank output variable
                     neuron_output = np.zeros(op.output.shape, self.output_data.dtype)
-                    op.neurons.step_math(
-                        dt, op_J[j], neuron_output, *[s[j] for s in op_states]
-                    )
+
+                    args, kwargs = [], {}
+                    if has_keys:
+                        kwargs.update((key, s[j]) for key, s in zip(keys, op_states))
+                    else:
+                        args.extend(s[j] for s in op_states)
+
+                    op.neurons.step_math(dt, op_J[j], neuron_output, *args, **kwargs)
                     mini_out += [neuron_output]
                 neuron_output = np.stack(mini_out, axis=0)
 
@@ -156,6 +166,10 @@ class RectifiedLinearBuilder(OpBuilder):
         signals.scatter(self.output_data, out)
 
 
+def _get_state(states, name, index):
+    return states[name] if isinstance(states, dict) else states[index]
+
+
 class SpikingRectifiedLinearBuilder(RectifiedLinearBuilder):
     """Build a group of `~nengo.SpikingRectifiedLinear` neuron
        operators."""
@@ -163,7 +177,9 @@ class SpikingRectifiedLinearBuilder(RectifiedLinearBuilder):
     def __init__(self, ops, signals, config):
         super().__init__(ops, signals, config)
 
-        self.voltage_data = signals.combine([op.states[0] for op in ops])
+        self.voltage_data = signals.combine(
+            [_get_state(op.states, "voltage", 0) for op in ops]
+        )
 
         self.alpha = 1 if self.amplitude is None else self.amplitude
         self.alpha /= signals.dt
@@ -341,8 +357,12 @@ class LIFBuilder(SoftLIFRateBuilder):
         )
         self.alpha = self.amplitude / signals.dt
 
-        self.voltage_data = signals.combine([op.states[0] for op in ops])
-        self.refractory_data = signals.combine([op.states[1] for op in ops])
+        self.voltage_data = signals.combine(
+            [_get_state(op.states, "voltage", 0) for op in ops]
+        )
+        self.refractory_data = signals.combine(
+            [_get_state(op.states, "refractory_time", 1) for op in ops]
+        )
 
         if self.config.lif_smoothing:
             self.sigma = tf.constant(self.config.lif_smoothing, dtype=signals.dtype)

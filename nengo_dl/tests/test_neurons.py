@@ -202,6 +202,7 @@ def test_leaky_relu(Simulator, Neurons):
             neuron_type=Neurons(negative_slope=0.1, amplitude=2),
             gain=nengo.dists.Choice([1]),
             bias=vals,
+            initial_phase=nengo.dists.Choice([0]),
         )
         ens1 = nengo.Ensemble(
             10,
@@ -209,6 +210,7 @@ def test_leaky_relu(Simulator, Neurons):
             neuron_type=Neurons(negative_slope=0.5),
             gain=nengo.dists.Choice([1]),
             bias=vals,
+            initial_phase=nengo.dists.Choice([0]),
         )
         p0 = nengo.Probe(ens0.neurons)
         p1 = nengo.Probe(ens1.neurons)

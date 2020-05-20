@@ -1078,7 +1078,13 @@ class TensorGraph(tf.keras.layers.Layer):
                 or (isinstance(op, TimeUpdate) and s is op.step)
                 # nengo marks neuron state as a set, but really it's more like an
                 # inc/update (since the neuron calculation may depend on the state)
-                or (isinstance(op, SimNeurons) and s in op.states)
+                or (
+                    isinstance(op, SimNeurons)
+                    and s
+                    in (
+                        op.states.values() if isinstance(op.states, dict) else op.states
+                    )
+                )
             )
 
         set_sigs = {
