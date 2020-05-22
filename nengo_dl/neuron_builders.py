@@ -122,15 +122,39 @@ class GenericNeuronBuilder(OpBuilder):
             signals.scatter(s, state_out[i])
 
 
-class RectifiedLinearBuilder(OpBuilder):
-    """Build a group of `~nengo.RectifiedLinear`
-    neuron operators."""
-
-    def __init__(self, ops, signals, config):
+class NeuronBuilder(OpBuilder):
+    def __init__(self, ops, signals, config, state_keys=None):
         super().__init__(ops, signals, config)
 
         self.J_data = signals.combine([op.J for op in ops])
         self.output_data = signals.combine([op.output for op in ops])
+
+        states0 = ops[0].states
+        has_keys = isinstance(states0, dict)
+        if state_keys is not None:
+            assert len(state_keys) == len(states0)
+            keys = state_keys
+        elif has_keys:
+            keys = list(states0)
+            assert all(set(op.states) == set(keys) for op in ops)
+        else:
+            keys = list(range(len(states0)))
+            assert all(len(op.states) == len(keys) for op in ops)
+
+        self.has_state_keys = has_keys
+        self.state_data = collections.OrderedDict(
+            (key, signals.combine([op.states[key] for op in ops])) for key in keys
+        )
+
+    def _step(self, dt, J, **states):
+        raise NotImplementedError()
+
+
+class RectifiedLinearBuilder(NeuronBuilder):
+    """Build a group of `~nengo.RectifiedLinear` neuron operators."""
+
+    def __init__(self, ops, signals, config):
+        super().__init__(ops, signals, config)
 
         if all(op.neurons.amplitude == 1 for op in ops):
             self.amplitude = None
@@ -152,7 +176,7 @@ class RectifiedLinearBuilder(OpBuilder):
                 signals.dtype,
             )
 
-    def _step(self, J):
+    def _step(self, dt, J):
         out = tf.nn.relu(J)
         if self.negative_slope is not None:
             out -= self.negative_slope * tf.nn.relu(-J)
@@ -162,7 +186,7 @@ class RectifiedLinearBuilder(OpBuilder):
 
     def build_step(self, signals):
         J = signals.gather(self.J_data)
-        out = self._step(J)
+        out = self._step(signals.dt, J)
         signals.scatter(self.output_data, out)
 
 
@@ -404,6 +428,60 @@ class LIFBuilder(SoftLIFRateBuilder):
         spike_out, spike_voltage, spike_ref = self._step(
             J, voltage, refractory, signals.dt
         )
+
+        if self.config.inference_only:
+            spikes, voltage, refractory = spike_out, spike_voltage, spike_ref
+        else:
+            rate_out = (
+                LIFRateBuilder._step(self, J)
+                if self.config.lif_smoothing is None
+                else SoftLIFRateBuilder._step(self, J)
+            )
+
+            spikes, voltage, refractory = tf_utils.smart_cond(
+                self.config.training,
+                true_fn=lambda: (rate_out, voltage, refractory),
+                false_fn=lambda: (spike_out, spike_voltage, spike_ref),
+            )
+
+        signals.scatter(self.output_data, spikes)
+        signals.scatter(self.refractory_data, refractory)
+        signals.scatter(self.voltage_data, voltage)
+
+
+class RegularSpikingBuilder(OpBuilder):
+    """Build a group of `~nengo.RegularSpiking` neuron operators."""
+
+    def __init__(self, ops, signals, config):
+        super().__init__(ops, signals, config)
+
+        self.alpha = self.amplitude / signals.dt
+
+        # states0 = ops[0].states
+        # assert isinstance(states0, dict)  # must be true if RegularSpiking exists
+        # self.states = {
+        #     key: signals.combine([op.states[key] for op in ops]) for key in states0
+        # }
+
+        self.base = RectifiedLinearBuilder(ops, signals, config)
+
+        self.voltage_data = signals.combine([op.states["voltage"] for op in ops])
+
+        # if self.config.lif_smoothing:
+        #     self.sigma = tf.constant(self.config.lif_smoothing, dtype=signals.dtype)
+
+    # def _step(self, J, voltage, refractory, dt):
+
+    def build_step(self, signals):
+        J = signals.gather(self.base.J_data)
+        voltage = signals.gather(self.voltage_data)
+        # states = {key: signals.gather(value) for key, value in self.states.items()}
+        base_states = {
+            key: signals.gather(value) for key, value in self.base.states.items()
+        }
+
+        base_step_out = self.base.step(signals.dt, J, **base_states)
+        rate_out, rate_states = base_step_out[0], base_step_out[1:]
 
         if self.config.inference_only:
             spikes, voltage, refractory = spike_out, spike_voltage, spike_ref
