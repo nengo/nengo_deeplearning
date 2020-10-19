@@ -5,6 +5,11 @@ Build classes for Nengo transform operators.
 import warnings
 
 from nengo.builder.transforms import ConvInc
+
+try:
+    from nengo.builder.transforms import ConvTransposeInc
+except ImportError:
+    ConvTransposeInc = None
 import numpy as np
 import tensorflow as tf
 
@@ -28,12 +33,46 @@ class ConvSet(ConvInc):
         return self.sets[0]
 
 
+if ConvTransposeInc is not None:
+
+    class ConvTransposeSet(ConvTransposeInc):
+        """
+        A version of `~nengo.builder.transforms.ConvTransposeInc` that overwrites
+        the target rather than incrementing.
+        """
+
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+
+            self.incs, self.sets = self.sets, self.incs
+
+        @property
+        def Y(self):
+            """Y is stored in ``sets`` rather than ``incs``."""
+            return self.sets[0]
+
+
+else:
+    ConvTransposeSet = None
+
+ConvTransposeTypes = ((ConvTransposeInc,) if ConvTransposeInc is not None else ()) + (
+    (ConvTransposeSet,) if ConvTransposeSet is not None else ()
+)
+
+
 @Builder.register(ConvInc)
 @Builder.register(ConvSet)
+@Builder.register(ConvTransposeInc)
+@Builder.register(ConvTransposeSet)
 class ConvIncBuilder(OpBuilder):
     """
     Build a group of `nengo.builder.transforms.ConvInc` operators.
     """
+
+    @staticmethod
+    def is_transpose_op(op):
+        """Returns True if the given op performs transpose convolution."""
+        return isinstance(op, ConvTransposeTypes)
 
     def build_pre(self, signals, config):
         super().build_pre(signals, config)
@@ -41,6 +80,7 @@ class ConvIncBuilder(OpBuilder):
         self.conv = self.ops[0].conv
         self.n_ops = len(self.ops)
         self.mode = "inc" if type(self.ops[0]) == ConvInc else "update"
+        self.transpose = self.is_transpose_op(self.ops[0])
 
         if not self.conv.channels_last and config.cpu_only:
             # TensorFlow doesn't support channels first on CPU, so if
@@ -165,13 +205,29 @@ class ConvIncBuilder(OpBuilder):
             W = tf.transpose(W, perm=self.perm_w)
             W = tf.reshape(W, self.reshape_w)
 
-        Y = tf.nn.convolution(
-            input=X,
-            filters=W,
-            strides=self.conv.strides,
-            data_format=self.fmt,
-            padding=self.conv.padding.upper(),
-        )
+        if self.transpose:
+            output_shape = [X.shape[0]] + list(self.conv.output_shape.shape)
+
+            # swap channels, because conv_transpose order is for forward weights
+            dims = self.conv.dimensions
+            filters = tf.transpose(W, perm=list(range(dims)) + [dims + 1, dims])
+
+            Y = tf.nn.conv_transpose(
+                input=X,
+                filters=filters,
+                output_shape=output_shape,
+                strides=self.conv.strides,
+                data_format=self.fmt,
+                padding=self.conv.padding.upper(),
+            )
+        else:
+            Y = tf.nn.convolution(
+                input=X,
+                filters=W,
+                strides=self.conv.strides,
+                data_format=self.fmt,
+                padding=self.conv.padding.upper(),
+            )
 
         if self.reshape_y is not None:
             Y = tf.reshape(Y, self.reshape_y)
@@ -199,4 +255,5 @@ class ConvIncBuilder(OpBuilder):
             and x.conv.strides == y.conv.strides
             and x.conv.padding == y.conv.padding
             and x.conv.channels_last == y.conv.channels_last
+            and ConvIncBuilder.is_transpose_op(x) == ConvIncBuilder.is_transpose_op(y)
         )
