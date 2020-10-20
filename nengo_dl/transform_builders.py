@@ -192,7 +192,13 @@ class ConvIncBuilder(OpBuilder):
             W = tf.reshape(W, self.reshape_w)
 
         if self.transpose:
-            output_shape = [X.shape[0]] + list(self.conv.output_shape.shape)
+            output_space = list(self.conv.output_shape.spatial_shape)
+            output_filters = sum(op.conv.n_filters for op in self.ops)
+            output_shape = [X.shape[0]] + (
+                output_space + [output_filters]
+                if self.conv.channels_last
+                else [output_filters] + output_space
+            )
 
             # swap channels, because conv_transpose order is for forward weights
             dims = self.conv.dimensions
@@ -238,7 +244,8 @@ class ConvIncBuilder(OpBuilder):
         return (
             x.X is y.X
             and x.conv.input_shape.shape == y.conv.input_shape.shape
-            and x.conv.output_shape.shape == y.conv.output_shape.shape
+            and x.conv.output_shape.spatial_shape == y.conv.output_shape.spatial_shape
+            and x.conv.kernel_size == y.conv.kernel_size
             and x.conv.strides == y.conv.strides
             and x.conv.padding == y.conv.padding
             and x.conv.channels_last == y.conv.channels_last

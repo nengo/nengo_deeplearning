@@ -1,58 +1,54 @@
 # pylint: disable=missing-docstring
 
 import nengo
+from nengo.builder.transforms import ConvInc
 import numpy as np
 import pytest
 import tensorflow as tf
 
+from nengo_dl.compat import ConvolutionTranspose, ConvTransposeInc, is_dummy_type
 from nengo_dl.utils import tf_gpu_installed
 
 
 @pytest.mark.parametrize("channels_last", (True, False))
-def test_merge_conv(Simulator, channels_last, seed, pytestconfig):
-    from nengo.builder.transforms import (  # pylint: disable=import-outside-toplevel
-        ConvInc,
-    )
+@pytest.mark.parametrize("transpose", (True, False))
+def test_merge_conv(Simulator, transpose, channels_last, seed, pytestconfig):
+    if transpose and is_dummy_type(ConvolutionTranspose):
+        pytest.skip("Nengo version does not support ConvolutionTranspose")
+
+    def make_transform():
+        if transpose:
+            return ConvolutionTranspose(
+                n_filters=7,
+                input_shape=(4, 4, 5) if channels_last else (5, 4, 4),
+                channels_last=channels_last,
+            )
+        else:
+            return nengo.Convolution(
+                n_filters=3,
+                input_shape=(4, 4, 2) if channels_last else (2, 4, 4),
+                channels_last=channels_last,
+            )
 
     with nengo.Network(seed=seed) as net:
-        a = nengo.Node(np.ones(32))
-        b = nengo.Node(size_in=12)
-        c = nengo.Node(size_in=12)
-        nengo.Connection(
-            a,
-            b,
-            synapse=None,
-            transform=nengo.Convolution(
-                3,
-                (4, 4, 2) if channels_last else (2, 4, 4),
-                channels_last=channels_last,
-            ),
-        )
-        nengo.Connection(
-            a,
-            c,
-            synapse=None,
-            transform=nengo.Convolution(
-                3,
-                (4, 4, 2) if channels_last else (2, 4, 4),
-                channels_last=channels_last,
-            ),
-        )
+        transform1 = make_transform()
+        transform2 = make_transform()
+        a = nengo.Node(np.ones(transform1.input_shape.size))
+        b = nengo.Node(size_in=transform1.output_shape.size)
+        c = nengo.Node(size_in=transform2.output_shape.size)
+        nengo.Connection(a, b, synapse=None, transform=transform1)
+        nengo.Connection(a, c, synapse=None, transform=transform2)
         p_b = nengo.Probe(b)
         p_c = nengo.Probe(c)
 
     with pytest.warns(None) as recwarns:
         with Simulator(net) as sim:
-            assert (
-                len(
-                    [
-                        ops
-                        for ops in sim.tensor_graph.plan
-                        if isinstance(ops[0], ConvInc)
-                    ]
-                )
-                == 1
-            )
+            conv_ops = [
+                ops
+                for ops in sim.tensor_graph.plan
+                if isinstance(ops[0], (ConvInc, ConvTransposeInc))
+            ]
+            assert len(conv_ops) == 1
 
             sim.step()
 

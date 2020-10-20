@@ -192,7 +192,9 @@ if version.parse(tf.__version__) < version.parse("2.3.0rc0"):
 # monkeypatch fix for https://github.com/nengo/nengo/pull/1587
 linalg_onenormest.aslinearoperator = linalg_interface.aslinearoperator
 
+ConvolutionTranspose = make_dummy_type("ConvolutionTranspose")
 ConvTransposeInc = make_dummy_type("ConvTransposeInc")
+
 if version.parse(nengo.__version__) < version.parse("3.1.0.dev0"):
     PoissonSpiking = make_dummy_type("PoissonSpiking")
     RegularSpiking = make_dummy_type("RegularSpiking")
@@ -232,6 +234,7 @@ else:
     from nengo.transforms import NoTransform
 
     try:
+        from nengo.transforms import ConvolutionTranspose
         from nengo.builder.transforms import ConvTransposeInc
     except ImportError:
         pass
