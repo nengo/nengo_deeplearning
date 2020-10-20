@@ -23,10 +23,12 @@ class NoType:
 
 
 def make_dummy_type(name):
-    t = type(name, (NoType,), {})
+    """Return a NoType subclass with the given name"""
+    return type(name, (NoType,), {})
 
 
 def is_dummy_type(t):
+    """Returns True if the given type is a NoType subclass, False otherwise."""
     return issubclass(t, NoType)
 
 
