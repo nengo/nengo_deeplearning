@@ -1087,7 +1087,8 @@ def test_remove_reset_incs():
 
     # convinc converted to convset
     x = dummies.Signal()
-    operators = [Reset(x), ConvInc(dummies.Signal(), dummies.Signal(), x, None)]
+    conv = nengo.Convolution(1, input_shape=(3, 3, 1))
+    operators = [Reset(x), ConvInc(dummies.Signal(), dummies.Signal(), x, conv)]
     new_operators = remove_reset_incs(operators)
     assert len(new_operators) == 1
     assert isinstance(new_operators[0], transform_builders.ConvSet)

@@ -252,6 +252,7 @@ class ConvIncBuilder(OpBuilder):
         return (
             x.X is y.X
             and x.conv.input_shape.shape == y.conv.input_shape.shape
+            and x.conv.output_shape.shape == y.conv.output_shape.shape
             and x.conv.strides == y.conv.strides
             and x.conv.padding == y.conv.padding
             and x.conv.channels_last == y.conv.channels_last
