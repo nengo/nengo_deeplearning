@@ -15,6 +15,21 @@ import tensorflow as tf
 from tensorflow.python.eager import context
 
 
+class NoType:
+    """A type that can never be instantiated, so nothing will be an instance"""
+
+    def __init__(self, *args, **kwargs):  # pragma: no cover
+        raise RuntimeError("cannot instantiate")
+
+
+def make_dummy_type(name):
+    t = type(name, (NoType,), {})
+
+
+def is_dummy_type(t):
+    return issubclass(t, NoType)
+
+
 # TensorFlow compatibility
 
 
@@ -177,10 +192,13 @@ if version.parse(tf.__version__) < version.parse("2.3.0rc0"):
 # monkeypatch fix for https://github.com/nengo/nengo/pull/1587
 linalg_onenormest.aslinearoperator = linalg_interface.aslinearoperator
 
+ConvTransposeInc = make_dummy_type("ConvTransposeInc")
 if version.parse(nengo.__version__) < version.parse("3.1.0.dev0"):
-    PoissonSpiking = RegularSpiking = StochasticSpiking = Tanh = NoTransform = type(
-        None
-    )
+    PoissonSpiking = make_dummy_type("PoissonSpiking")
+    RegularSpiking = make_dummy_type("RegularSpiking")
+    StochasticSpiking = make_dummy_type("StochasticSpiking")
+    Tanh = make_dummy_type("Tanh")
+    NoTransform = make_dummy_type("NoTransform")
 
     default_transform = 1
 
@@ -212,6 +230,11 @@ if version.parse(nengo.__version__) < version.parse("3.1.0.dev0"):
 else:
     from nengo.neurons import PoissonSpiking, RegularSpiking, StochasticSpiking, Tanh
     from nengo.transforms import NoTransform
+
+    try:
+        from nengo.builder.transforms import ConvTransposeInc
+    except ImportError:
+        pass
 
     default_transform = None
 
@@ -247,6 +270,6 @@ def eager_enabled():
 try:
     from keras_spiking import SpikingActivation, Lowpass, Alpha
 except ImportError:
-    SpikingActivation = object()
-    Lowpass = object()
-    Alpha = object()
+    SpikingActivation = make_dummy_type("keras_spiking_SpikingActivation")
+    Lowpass = make_dummy_type("keras_spiking_Lowpass")
+    Alpha = make_dummy_type("keras_spiking_Alpha")

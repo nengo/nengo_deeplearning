@@ -5,15 +5,11 @@ Build classes for Nengo transform operators.
 import warnings
 
 from nengo.builder.transforms import ConvInc
-
-try:
-    from nengo.builder.transforms import ConvTransposeInc
-except ImportError:
-    ConvTransposeInc = None
 import numpy as np
 import tensorflow as tf
 
 from nengo_dl.builder import Builder, OpBuilder
+from nengo_dl.compat import ConvTransposeInc
 
 
 class ConvSet(ConvInc):
@@ -33,31 +29,21 @@ class ConvSet(ConvInc):
         return self.sets[0]
 
 
-if ConvTransposeInc is not None:
+class ConvTransposeSet(ConvTransposeInc):
+    """
+    A version of `~nengo.builder.transforms.ConvTransposeInc` that overwrites
+    the target rather than incrementing.
+    """
 
-    class ConvTransposeSet(ConvTransposeInc):
-        """
-        A version of `~nengo.builder.transforms.ConvTransposeInc` that overwrites
-        the target rather than incrementing.
-        """
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
 
-        def __init__(self, *args, **kwargs):
-            super().__init__(*args, **kwargs)
+        self.incs, self.sets = self.sets, self.incs
 
-            self.incs, self.sets = self.sets, self.incs
-
-        @property
-        def Y(self):
-            """Y is stored in ``sets`` rather than ``incs``."""
-            return self.sets[0]
-
-
-else:
-    ConvTransposeSet = None
-
-ConvTransposeTypes = ((ConvTransposeInc,) if ConvTransposeInc is not None else ()) + (
-    (ConvTransposeSet,) if ConvTransposeSet is not None else ()
-)
+    @property
+    def Y(self):
+        """Y is stored in ``sets`` rather than ``incs``."""
+        return self.sets[0]
 
 
 @Builder.register(ConvInc)
@@ -72,7 +58,7 @@ class ConvIncBuilder(OpBuilder):
     @staticmethod
     def is_transpose_op(op):
         """Returns True if the given op performs transpose convolution."""
-        return isinstance(op, ConvTransposeTypes)
+        return isinstance(op, (ConvTransposeInc, ConvTransposeSet))
 
     def build_pre(self, signals, config):
         super().build_pre(signals, config)
