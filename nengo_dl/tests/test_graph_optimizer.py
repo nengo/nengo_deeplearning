@@ -1094,6 +1094,19 @@ def test_remove_reset_incs():
     assert isinstance(new_operators[0], transform_builders.ConvSet)
     assert new_operators[0].Y is x
 
+    # convtransposeinc converted to convtransposeset
+    if not compat.is_dummy_type(compat.ConvTransposeInc):
+        x = dummies.Signal()
+        conv_tr = nengo.transforms.ConvolutionTranspose(1, input_shape=(1, 1, 1))
+        operators = [
+            Reset(x),
+            compat.ConvTransposeInc(dummies.Signal(), dummies.Signal(), x, conv_tr),
+        ]
+        new_operators = remove_reset_incs(operators)
+        assert len(new_operators) == 1
+        assert isinstance(new_operators[0], transform_builders.ConvTransposeSet)
+        assert new_operators[0].Y is x
+
     # sparsedotinc converted to sparsedotset
     x = dummies.Signal()
     operators = [

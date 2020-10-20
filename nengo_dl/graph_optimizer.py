@@ -25,6 +25,7 @@ from nengo_dl import (
     tensor_node,
     transform_builders,
 )
+from nengo_dl.compat import ConvTransposeInc
 
 logger = logging.getLogger(__name__)
 
@@ -1122,7 +1123,7 @@ def remove_zero_incs(operators):
 
     new_operators = []
     for op in operators:
-        if isinstance(op, (DotInc, ElementwiseInc, Copy, ConvInc)):
+        if isinstance(op, (DotInc, ElementwiseInc, Copy, ConvInc, ConvTransposeInc)):
             for src in op.reads:
                 # check if the input is the output of a Node (in which case the
                 # value might change, so we should never get rid of this op).
@@ -1196,6 +1197,7 @@ def remove_reset_incs(operators):
         Copy,
         SimProcess,
         ConvInc,
+        ConvTransposeInc,
         op_builders.ResetInc,
     ]
     incs = defaultdict(list)
@@ -1254,6 +1256,10 @@ def remove_reset_incs(operators):
                 )
             elif isinstance(incer, ConvInc):
                 setter = transform_builders.ConvSet(
+                    incer.W, incer.X, incer.Y, incer.conv, tag=incer.tag
+                )
+            elif isinstance(incer, ConvTransposeInc):
+                setter = transform_builders.ConvTransposeSet(
                     incer.W, incer.X, incer.Y, incer.conv, tag=incer.tag
                 )
             elif isinstance(incer, op_builders.ResetInc):
