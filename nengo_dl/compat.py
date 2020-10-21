@@ -238,8 +238,9 @@ else:
     try:
         from nengo.transforms import ConvolutionTranspose
         from nengo.builder.transforms import ConvTransposeInc
-    except ImportError:
-        pass
+    except ImportError:  # pragma: no cover
+        ConvolutionTranspose = make_dummy_type("ConvolutionTranspose")
+        ConvTransposeInc = make_dummy_type("ConvTransposeInc")
 
     default_transform = None
 
