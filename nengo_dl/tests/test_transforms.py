@@ -10,11 +10,18 @@ from nengo_dl.compat import ConvolutionTranspose, ConvTransposeInc, is_dummy_typ
 from nengo_dl.utils import tf_gpu_installed
 
 
+@pytest.mark.parametrize("force_cpu", (False, True))
 @pytest.mark.parametrize("channels_last", (True, False))
 @pytest.mark.parametrize("transpose", (True, False))
-def test_merge_conv(Simulator, transpose, channels_last, seed, pytestconfig):
+def test_merge_conv(Simulator, transpose, channels_last, force_cpu, seed, pytestconfig):
     if transpose and is_dummy_type(ConvolutionTranspose):
         pytest.skip("Nengo version does not support ConvolutionTranspose")
+
+    is_cpu = not tf_gpu_installed or pytestconfig.getoption("--device") == "/cpu:0"
+    if is_cpu and not force_cpu:
+        pytest.skip("CPU will be tested in the `force_cpu` case")
+    else:
+        is_cpu = is_cpu or force_cpu
 
     def make_transform():
         if transpose:
@@ -41,8 +48,12 @@ def test_merge_conv(Simulator, transpose, channels_last, seed, pytestconfig):
         p_b = nengo.Probe(b)
         p_c = nengo.Probe(c)
 
+    sim_kwargs = {}
+    if force_cpu:
+        sim_kwargs["device"] = "/cpu:0"
+
     with pytest.warns(None) as recwarns:
-        with Simulator(net) as sim:
+        with Simulator(net, **sim_kwargs) as sim:
             conv_ops = [
                 ops
                 for ops in sim.tensor_graph.plan
@@ -56,9 +67,7 @@ def test_merge_conv(Simulator, transpose, channels_last, seed, pytestconfig):
     # note: this also assures us that we are testing on the GPU in native
     # channels_first when possible
     recwarns = [w for w in recwarns if "channels_last=False" in str(w.message)]
-    if channels_last or (
-        tf_gpu_installed and pytestconfig.getoption("--device") != "/cpu:0"
-    ):
+    if channels_last or not is_cpu:
         assert len(recwarns) == 0
     else:
         assert len(recwarns) > 0
