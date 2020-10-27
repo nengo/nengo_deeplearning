@@ -115,7 +115,7 @@ class ConvIncBuilder(OpBuilder):
             perm_x[1:-1] = perm_x[2:]
             perm_x[-1] = 1
 
-            self.perm_x = tf.constant(perm_x)
+            self.perm_x = perm_x
         else:
             self.perm_x = None
 
@@ -194,11 +194,14 @@ class ConvIncBuilder(OpBuilder):
         if self.transpose:
             output_space = list(self.conv.output_shape.spatial_shape)
             output_filters = sum(op.conv.n_filters for op in self.ops)
+
             output_shape = [X.shape[0]] + (
                 output_space + [output_filters]
                 if self.conv.channels_last
                 else [output_filters] + output_space
             )
+            if self.perm_x is not None:
+                output_shape = [output_shape[i] for i in self.perm_x]
 
             # swap channels, because conv_transpose order is for forward weights
             dims = self.conv.dimensions
